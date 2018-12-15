@@ -1,0 +1,110 @@
+#include <msp430F5529.h>
+#include <stdlib.h>                               //Processor specific definitions
+#include <stdio.h>
+
+
+unsigned char SADDR = 0x48;        //Slave address for TMP112 WRITE TO 0b01001000
+unsigned char RADDR = 0x00;       //Slave register address for TMP112
+
+unsigned char temp= 0x00;                   //assign temperature variable
+
+void using_TMP112_temperature_ic();
+
+
+int main( void )
+{
+WDTCTL = WDTPW + WDTHOLD;               // Stop WDT
+
+//set clock freq 8 Mhz
+
+while(1)
+{
+using_TMP112_temperature_ic();
+
+}
+}
+
+void using_TMP112_temperature_ic()
+{
+        P4SEL |= BIT1|BIT2;                        //4.2=SDA -  4.3=CLK
+        P3SEL &=~ BIT3;///ALERT pin
+        P3DIR |= BIT3;
+        P3OUT &=~ BIT3;
+
+        UCB1CTL1 |= UCSWRST;                       // Enable SoftWare reset
+        UCB1CTL0 = UCMST + UCMODE_3 + UCSYNC;      // Mode: Master, I2C, synchronous
+        UCB1CTL1 = UCSSEL_2 + UCSWRST;             // Use SMCLK, keep SW reset
+        UCB1BR0 = 80; // fSCL = SMCLK/80 = ~100kHz
+        UCB1BR1 = 0;
+        UCB1I2CSA = SADDR;                           //Set Slave address 0x48
+        UCB1CTL1 &= ~UCSWRST;                      // Clear SW reset, resume operation
+        UCB1CTL0 &= ~UCSLA10;                      // Enable 7 bit slave address option
+        UCB1CTL1 |= UCTR;                          // Master is a transmitter
+        UCB1CTL1 |= UCTXSTT;                       // Staart : TXIFG flag is raised
+
+
+        unsigned char hold = 0x00;
+
+        while (hold == 0x00)
+        {
+            hold = UCB1IFG;                //wait until slave address is sent completely
+        }
+        UCB1TXBUF = RADDR;                        // input register add=0x00 into TXBUF, TXIFG flag cleared
+        hold = 0x00;
+
+
+        // Select configuration register
+        while (hold == 0x00)
+        {
+            hold = UCB1IFG;
+        }
+        UCB1TXBUF = 0x01;
+        hold = 0x00;
+
+        // Continuous conversion, comparator mode, 12-bit resolution
+      while (hold == 0x00)
+        {
+            hold = UCB1IFG;
+        }
+        UCB1TXBUF = 0x60;
+        hold = 0x00;
+
+     while (hold == 0x00)
+        {
+            hold = UCB1IFG;
+        }
+        UCB1TXBUF = 0xA0;
+        hold = 0x00;
+        //----------------------------------------------------------------------------------------------
+
+        //clear hold variable for next wait cycle
+
+        //TMP112 is now setup with it being addressed and its register when temp data is now address
+        //Now starting the Master Receiver mode where the TMP112 will be outputting temperature data to MSP430
+        //Master Receiver Mode
+
+        UCB1CTL1 &= ~UCTR;                                    // Master is a receiver
+        UCB1CTL1 |= UCTXSTT;                                 // Repeated Staart
+
+       while (hold == 0x00)
+        {
+            hold = UCB1IFG;                   // Wait for RX Interrupt flag
+        }
+        temp_112[0] = UCB1RXBUF;
+        hold = 0x00;
+
+        while (hold == 0x00)
+        {
+            hold = UCB1IFG;                       // Wait for RX Interrupt flag
+        }
+        temp_112[1] = UCB1RXBUF;
+        hold = 0x00;
+        UCB1CTL1 |= UCTXSTP;                                   // I2C stop condition
+
+
+        TMP_112_temp=((temp_112[0]*256+temp_112[1])/16)*0.0625;     //TMP112 -temperature calculation equation    ---if temp_112[0]=6 and temp_112[1]=64 then temp is 100 C  -->  0.0625 used to convert in C
+
+
+        __delay_cycles(300);//put break point here u will get temp
+
+}
